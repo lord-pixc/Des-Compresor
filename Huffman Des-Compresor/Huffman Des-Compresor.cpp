@@ -1,77 +1,71 @@
-#include "Descomprimir.cpp"
-
 #include <iostream>
 #include <fstream>
 #include <vector>
-#include <array>
 #include <queue>
 #include <map>
 #include <string>
-#include <cstdint>
 
 using namespace std;
 
-// -----------------------------------------------------------------------------
-// NODO DEL ÁRBOL DE HUFFMAN
-// -----------------------------------------------------------------------------
-struct Node {
-    uint64_t freq;
-    int byte;         
-    Node* left;
-    Node* right;
+bool decompressFile(const string& cpmPath);
 
-    Node(uint64_t f, int b, Node* l = nullptr, Node* r = nullptr)
-        : freq(f), byte(b), left(l), right(r) {
+//estructura principal del arbol de huffman
+struct HuffmanNodo {
+    unsigned long long frecuencia;
+    int byteGuardado;
+    HuffmanNodo* izquierda;
+    HuffmanNodo* derecha;
+
+    HuffmanNodo(unsigned long long f, int b, HuffmanNodo* izq = NULL, HuffmanNodo* der = NULL)
+        : frecuencia(f), byteGuardado(b), izquierda(izq), derecha(der) {
     }
 };
 
-struct NodeCompare {
-    bool operator()(Node* a, Node* b) const {
-        return a->freq > b->freq;  
+struct CompararHuffman {
+    bool operator()(HuffmanNodo* a, HuffmanNodo* b) const {
+        return a->frecuencia > b->frecuencia;
     }
 };
 
-
-// -----------------------------------------------------------------------------
-// RUTAS Y NOMBRES DE ARCHIVO
-// -----------------------------------------------------------------------------
+//obtiene carpeta base de una ruta simple
 string getDirectory(const string& path) {
     size_t pos = path.find_last_of("/\\");
-    if (pos == string::npos) 
+    if (pos == string::npos)
         return "";
 
     return path.substr(0, pos + 1);
 }
 
+//obtiene nombre y extension
 string getFileName(const string& path) {
     size_t pos = path.find_last_of("/\\");
-    if (pos == string::npos) 
+    if (pos == string::npos)
         return path;
 
     return path.substr(pos + 1);
 }
 
+//toma nombre sin extension
 string getBaseName(const string& filename) {
     size_t pos = filename.find_last_of('.');
-    if (pos == string::npos) 
+    if (pos == string::npos)
         return filename;
 
     return filename.substr(0, pos);
 }
 
+//obtiene solo la extension original
 string getExtension(const string& filename) {
     size_t pos = filename.find_last_of('.');
-    if (pos == string::npos) 
+    if (pos == string::npos)
         return "";
 
-    return filename.substr(pos);  // incluye el '.'
+    return filename.substr(pos);
 }
 
-// -----------------------------------------------------------------------------
-// LECTURA / ESCRITURA DE ARCHIVOS BINARIOS
-// -----------------------------------------------------------------------------
-bool readFile(const string& path, vector<uint8_t>& buffer) {
-    ifstream in(path, ios::binary);
+//lee un archivo binario completo
+bool readFile(const string& path, vector<unsigned char>& buffer) {
+    ifstream in(path.c_str(), ios::binary);
 
     if (!in) {
         cerr << "No se pudo abrir el archivo de entrada: " << path << "\n";
@@ -83,258 +77,244 @@ bool readFile(const string& path, vector<uint8_t>& buffer) {
     in.seekg(0, ios::beg);
 
     if (size <= 0) {
-        cerr << "Archivo vacio o error de tamaño.\n";
+        cerr << "Archivo vacio o error de tamano.\n";
         return false;
     }
 
-    buffer.resize(static_cast<size_t>(size));
-    in.read(reinterpret_cast<char*>(buffer.data()), size);
+    buffer.resize((size_t)size);
+    if (!buffer.empty()) {
+        in.read((char*)&buffer[0], size);
+    }
     return true;
 }
 
-bool writeFile(const string& path, const vector<uint8_t>& buffer) {
-    ofstream out(path, ios::binary | ios::trunc);
+//escribe todos los bytes al disco
+bool writeFile(const string& path, const vector<unsigned char>& buffer) {
+    ofstream out(path.c_str(), ios::binary | ios::trunc);
 
     if (!out) {
         cerr << "No se pudo abrir el archivo de salida: " << path << "\n";
         return false;
     }
 
-    out.write(reinterpret_cast<const char*>(buffer.data()),
-        static_cast<streamsize>(buffer.size()));
+    if (!buffer.empty()) {
+        out.write((const char*)&buffer[0], (streamsize)buffer.size());
+    }
     return true;
 }
 
-// -----------------------------------------------------------------------------
-// CONSTRUCCIÓN DEL ÁRBOL Y CÓDIGOS HUFFMAN
-// -----------------------------------------------------------------------------
-Node* buildHuffmanTree(const array<uint64_t, 256>& freqs) {
-    priority_queue<Node*, vector<Node*>, NodeCompare> pq;
+//crea el arbol de huffman usando cola prioritaria
+HuffmanNodo* buildHuffmanTree(const unsigned long long freqs[256]) {
+    priority_queue<HuffmanNodo*, vector<HuffmanNodo*>, CompararHuffman> colaHuffman;
 
     for (int i = 0; i < 256; ++i) {
         if (freqs[i] > 0) {
-            pq.push(new Node(freqs[i], i));
+            colaHuffman.push(new HuffmanNodo(freqs[i], i));
         }
     }
 
-    if (pq.empty()) return nullptr;
+    if (colaHuffman.empty()) return NULL;
 
-    // Caso especial: solo un símbolo
-    if (pq.size() == 1) {
-        Node* only = pq.top();
-        pq.pop();
-        Node* root = new Node(only->freq,
-            -1,
-            only,
-            nullptr
-        );
-
-        return root;
+    //caso especial con un simbolo
+    if (colaHuffman.size() == 1) {
+        HuffmanNodo* unico = colaHuffman.top();
+        colaHuffman.pop();
+        HuffmanNodo* raiz = new HuffmanNodo(unico->frecuencia, -1, unico, NULL);
+        return raiz;
     }
 
-    while (pq.size() > 1) {
+    while (colaHuffman.size() > 1) {
+        HuffmanNodo* primero = colaHuffman.top();
+        colaHuffman.pop();
+        HuffmanNodo* segundo = colaHuffman.top();
+        colaHuffman.pop();
 
-        Node* a = pq.top(); 
-        pq.pop();
-        Node* b = pq.top(); 
-        pq.pop();
-
-        Node* parent = new Node(
-            a->freq + b->freq,
-            -1,
-            a,
-            b
-        );
-
-        pq.push(parent);
+        HuffmanNodo* padre = new HuffmanNodo(primero->frecuencia + segundo->frecuencia, -1, primero, segundo);
+        colaHuffman.push(padre);
     }
 
-    return pq.top();
+    return colaHuffman.top();
 }
 
-void buildCodes(Node* node, const string& prefix, vector<string>& codes) {
-    if (!node) return;
+//recorre el arbol para asignar codigos
+void buildCodes(HuffmanNodo* nodo, const string& prefix, vector<string>& codes) {
+    if (!nodo) return;
 
-    // Hoja
-    if (!node->left && !node->right && node->byte >= 0) {
-        // Si solo había un símbolo, puede que prefix esté vacío -> ponemos "0"
-        codes[node->byte] = prefix.empty() ? "0" : prefix;
+    //hoja del arbol
+    if (!nodo->izquierda && !nodo->derecha && nodo->byteGuardado >= 0) {
+        codes[nodo->byteGuardado] = prefix.empty() ? "0" : prefix;
         return;
     }
 
-    // Izquierda = 0, Derecha = 1
-    buildCodes(node->left, prefix + "0", codes);
-    buildCodes(node->right, prefix + "1", codes);
+    buildCodes(nodo->izquierda, prefix + "0", codes);
+    buildCodes(nodo->derecha, prefix + "1", codes);
 }
 
-// -----------------------------------------------------------------------------
-// CONVERSIÓN bits <-> bytes (usa &, |, <<, etc. en el algoritmo real)
-// -----------------------------------------------------------------------------
-vector<uint8_t> bitsToBytes(const string& bits, int& paddedBits) {
+//convierte la cadena de bits en bytes reales usando desplazamientos y or
+vector<unsigned char> bitsToBytes(const string& bits, int& paddedBits) {
     paddedBits = 0;
-    if (bits.empty()) return {};
+    if (bits.empty()) return vector<unsigned char>();
 
-    int totalBits = static_cast<int>(bits.size());
-    paddedBits = (8 - (totalBits % 8)) % 8;  // cuántos 0 agregamos al final
+    int totalBits = (int)bits.size();
+    paddedBits = (8 - (totalBits % 8)) % 8;
 
     string bitstream = bits;
     bitstream.append(paddedBits, '0');
 
-    int finalBits = static_cast<int>(bitstream.size());
-    vector<uint8_t> out(finalBits / 8);
+    int finalBits = (int)bitstream.size();
+    vector<unsigned char> out(finalBits / 8, 0);
 
     int bitIndex = 0;
     for (size_t i = 0; i < out.size(); ++i) {
-        uint8_t byte = 0;
+        unsigned char byteActual = 0;
 
         for (int b = 0; b < 8; ++b) {
-            byte <<= 1; // desplazamiento de bits
+            //desplaza a la izquierda para dejar espacio al bit nuevo
+            byteActual = (unsigned char)(byteActual << 1);
 
             if (bitstream[bitIndex++] == '1') {
-                byte |= 1;  // OR con 1 -> pone el bit menos significativo en 1
+                //or con 1 prende el bit menos significativo
+                byteActual = (unsigned char)(byteActual | 1);
             }
         }
-        out[i] = byte;
+        out[i] = byteActual;
     }
 
     return out;
 }
 
-string bytesToBits(const vector<uint8_t>& data) {
+//pasa cada byte a texto de bits usando mascaras
+string bytesToBits(const vector<unsigned char>& data) {
     string bits;
     bits.reserve(data.size() * 8);
 
-    for (uint8_t byte : data) {
+    for (size_t i = 0; i < data.size(); ++i) {
+        unsigned char byte = data[i];
         for (int b = 7; b >= 0; --b) {
-            uint8_t mask = static_cast<uint8_t>(1u << b);
-            bits.push_back((byte & mask) ? '1' : '0');  // AND con máscara
+            //mascara con desplazamiento para revisar cada posicion
+            unsigned char mask = (unsigned char)(1 << b);
+            bits.push_back((byte & mask) ? '1' : '0');
         }
     }
 
     return bits;
 }
 
+//lee un entero de 4 bytes desde el buffer
+unsigned int readUInt(const vector<unsigned char>& data, size_t& offset) {
+    if (offset + 4 > data.size()) return 0;
+    unsigned int value = 0;
+    for (int i = 0; i < 4; ++i) {
+        value |= ((unsigned int)data[offset + i]) << (8 * i);
+    }
+    offset += 4;
+    return value;
+}
 
-/* HEADER DEL ARCHIVO COMPRIMIDO.cpm
+//lee un entero de 8 bytes usando desplazamientos
+unsigned long long readULL(const vector<unsigned char>& data, size_t& offset) {
+    if (offset + 8 > data.size()) return 0;
+    unsigned long long value = 0;
+    for (int i = 0; i < 8; ++i) {
+        value |= ((unsigned long long)data[offset + i]) << (8 * i);
+    }
+    offset += 8;
+    return value;
+}
 
- Formato del archivo .cpm:
-  [int32  paddedBits]
-  [uint32 numCodes]
-    por cada código:
-       [uint8  symbol]
-       [uint32 lenCode]
-       [lenCode chars '0'/'1']
-  [uint64 originalSize]      
-  [uint32 nameLen]
-  [nameLen chars nombreOriginal]   
-
- Después de esto vienen los datos comprimidos (RawData).
-
- Estos CAMBIOS de header son para cumplir:
-  "Header/Size/nombreOriginal y su RawData" de la práctica.
- -----------------------------------------------------------------------------*/
+//escribe el header completo con informacion adicional
 void writeHeader(ofstream& out,
     const vector<string>& codes,
     int paddedBits,
-    uint64_t originalSize,
+    unsigned long long originalSize,
     const string& originalName) {
-    int32_t pad = paddedBits;
-    out.write(reinterpret_cast<const char*>(&pad), sizeof(int32_t));
+    int pad = paddedBits;
+    out.write((const char*)&pad, sizeof(int));
 
-    uint32_t numCodes = 0;
-    for (const auto& c : codes) {
-        if (!c.empty()) ++numCodes;
+    unsigned int numCodes = 0;
+    for (size_t i = 0; i < codes.size(); ++i) {
+        if (!codes[i].empty()) numCodes++;
     }
-    out.write(reinterpret_cast<const char*>(&numCodes), sizeof(uint32_t));
+    out.write((const char*)&numCodes, sizeof(unsigned int));
 
     for (int i = 0; i < 256; ++i) {
         if (codes[i].empty()) continue;
 
-        uint8_t symbol = static_cast<uint8_t>(i);
-        uint32_t len = static_cast<uint32_t>(codes[i].size());
+        unsigned char symbol = (unsigned char)i;
+        unsigned int len = (unsigned int)codes[i].size();
 
-        out.write(reinterpret_cast<const char*>(&symbol), sizeof(uint8_t));
-        out.write(reinterpret_cast<const char*>(&len), sizeof(uint32_t));
-        out.write(codes[i].data(), static_cast<streamsize>(len));
+        out.write((const char*)&symbol, sizeof(unsigned char));
+        out.write((const char*)&len, sizeof(unsigned int));
+        out.write(codes[i].data(), (streamsize)len);
     }
 
-    // CAMBIO: guardamos tamaño original y nombre original
-    out.write(reinterpret_cast<const char*>(&originalSize), sizeof(uint64_t));
+    out.write((const char*)&originalSize, sizeof(unsigned long long));
 
-    uint32_t nameLen = static_cast<uint32_t>(originalName.size());
-    out.write(reinterpret_cast<const char*>(&nameLen), sizeof(uint32_t));
-    out.write(originalName.data(), static_cast<streamsize>(nameLen));
+    unsigned int nameLen = (unsigned int)originalName.size();
+    out.write((const char*)&nameLen, sizeof(unsigned int));
+    if (nameLen > 0) {
+        out.write(originalName.data(), (streamsize)nameLen);
+    }
 }
 
-bool readHeader(const vector<uint8_t>& fileData,
+//lee el header y arma las tablas de codigos
+bool readHeader(const vector<unsigned char>& fileData,
     size_t& offset,
     vector<string>& codes,
     int& paddedBits,
-    uint64_t& originalSize,
+    unsigned long long& originalSize,
     string& originalName) {
     if (fileData.size() < 8) return false;
 
-    if (offset + sizeof(int32_t) > fileData.size()) return false;
-    paddedBits = *reinterpret_cast<const int32_t*>(&fileData[offset]);
-    offset += sizeof(int32_t);
+    if (offset + sizeof(int) > fileData.size()) return false;
+    paddedBits = (int)readUInt(fileData, offset);
 
-    if (offset + sizeof(uint32_t) > fileData.size()) return false;
-    uint32_t numCodes = *reinterpret_cast<const uint32_t*>(&fileData[offset]);
-    offset += sizeof(uint32_t);
+    if (offset + sizeof(unsigned int) > fileData.size()) return false;
+    unsigned int numCodes = readUInt(fileData, offset);
 
-    for (uint32_t i = 0; i < numCodes; ++i) {
+    for (unsigned int i = 0; i < numCodes; ++i) {
         if (offset + 1 > fileData.size()) return false;
-        uint8_t symbol = fileData[offset];
+        unsigned char symbol = fileData[offset];
         offset += 1;
 
-        if (offset + sizeof(uint32_t) > fileData.size()) return false;
-        uint32_t len = *reinterpret_cast<const uint32_t*>(&fileData[offset]);
-        offset += sizeof(uint32_t);
+        if (offset + sizeof(unsigned int) > fileData.size()) return false;
+        unsigned int len = readUInt(fileData, offset);
 
         if (offset + len > fileData.size()) return false;
-        string code(reinterpret_cast<const char*>(&fileData[offset]), len);
+        string code((const char*)&fileData[offset], len);
         offset += len;
 
         codes[symbol] = code;
     }
 
-    //leer tamaño original y nombre original
-    if (offset + sizeof(uint64_t) > fileData.size()) return false;
-    originalSize = *reinterpret_cast<const uint64_t*>(&fileData[offset]);
-    offset += sizeof(uint64_t);
+    if (offset + sizeof(unsigned long long) > fileData.size()) return false;
+    originalSize = readULL(fileData, offset);
 
-    if (offset + sizeof(uint32_t) > fileData.size()) return false;
-    uint32_t nameLen = *reinterpret_cast<const uint32_t*>(&fileData[offset]);
-    offset += sizeof(uint32_t);
+    if (offset + sizeof(unsigned int) > fileData.size()) return false;
+    unsigned int nameLen = readUInt(fileData, offset);
 
     if (offset + nameLen > fileData.size()) return false;
-    originalName.assign(reinterpret_cast<const char*>(&fileData[offset]),
-        nameLen);
+    originalName.assign((const char*)&fileData[offset], nameLen);
     offset += nameLen;
 
     return true;
 }
 
-// -----------------------------------------------------------------------------
-// COMPRESIÓN
-//
-// CAMBIO: compressFile SOLO pide el nombre del archivo original y
-//         INTERNAMENTE decide que el comprimido se llame "ArchivoX.cpm"
-//         en la misma carpeta, como dice la tabla de la práctica.
-// -----------------------------------------------------------------------------
+//comprime el archivo original
 bool compressFile(const string& inputPath) {
-    vector<uint8_t> input;
+    vector<unsigned char> input;
     if (!readFile(inputPath, input)) {
         return false;
     }
 
-    // Frecuencia de cada byte
-    array<uint64_t, 256> freqs{};
-    for (uint8_t b : input) {
+    unsigned long long freqs[256];
+    for (int i = 0; i < 256; ++i) freqs[i] = 0;
+    for (size_t i = 0; i < input.size(); ++i) {
+        unsigned char b = input[i];
         freqs[b]++;
     }
 
-    Node* root = buildHuffmanTree(freqs);
+    HuffmanNodo* root = buildHuffmanTree(freqs);
     if (!root) {
         cerr << "No se pudo construir el arbol de Huffman.\n";
         return false;
@@ -343,35 +323,33 @@ bool compressFile(const string& inputPath) {
     vector<string> codes(256);
     buildCodes(root, "", codes);
 
-    // Codificar el archivo a una cadena de bits
     string bitString;
-    bitString.reserve(input.size() * 2); // aproximación
-    for (uint8_t b : input) {
-        bitString += codes[b];
+    bitString.reserve(input.size() * 2);
+    for (size_t i = 0; i < input.size(); ++i) {
+        bitString += codes[input[i]];
     }
 
     int paddedBits = 0;
-    vector<uint8_t> compressedData = bitsToBytes(bitString, paddedBits);
+    vector<unsigned char> compressedData = bitsToBytes(bitString, paddedBits);
 
-    // CAMBIO: generamos nombre "ArchivoX.cpm"
     string dir = getDirectory(inputPath);
-    string fileName = getFileName(inputPath);     // nombre original (con ext)
+    string fileName = getFileName(inputPath);
     string base = getBaseName(fileName);
-    string compressedPath = dir + base + ".cpm";  // extensión .cpm
+    string compressedPath = dir + base + ".cpm";
 
-    ofstream out(compressedPath, ios::binary | ios::trunc);
+    ofstream out(compressedPath.c_str(), ios::binary | ios::trunc);
     if (!out) {
         cerr << "No se pudo abrir el archivo de salida: " << compressedPath << "\n";
         return false;
     }
 
-    uint64_t originalSize = static_cast<uint64_t>(input.size());
-    string originalName = fileName; // sin ruta
+    unsigned long long originalSize = (unsigned long long)input.size();
+    string originalName = fileName;
 
-    // Header + datos comprimidos
     writeHeader(out, codes, paddedBits, originalSize, originalName);
-    out.write(reinterpret_cast<const char*>(compressedData.data()),
-        static_cast<streamsize>(compressedData.size()));
+    if (!compressedData.empty()) {
+        out.write((const char*)&compressedData[0], (streamsize)compressedData.size());
+    }
 
     cout << "Archivo comprimido correctamente.\n";
     cout << "Archivo original : " << inputPath << "\n";
@@ -379,16 +357,83 @@ bool compressFile(const string& inputPath) {
     return true;
 }
 
+//descomprime el archivo creado
+bool decompressFile(const string& cpmPath) {
+    vector<unsigned char> fileData;
+    if (!readFile(cpmPath, fileData)) {
+        return false;
+    }
 
+    size_t offset = 0;
+    vector<string> codes(256);
+    int paddedBits = 0;
+    unsigned long long originalSize = 0;
+    string originalName;
 
-// -----------------------------------------------------------------------------
-// MENÚ PRINCIPAL
-// -----------------------------------------------------------------------------
+    if (!readHeader(fileData, offset, codes, paddedBits, originalSize, originalName)) {
+        cerr << "Header de Huffman invalido.\n";
+        return false;
+    }
+
+    vector<unsigned char> compressedBytes;
+    if (offset < fileData.size()) {
+        compressedBytes.assign(fileData.begin() + offset, fileData.end());
+    }
+    string bitString = bytesToBits(compressedBytes);
+
+    if (paddedBits > 0 && paddedBits <= (int)bitString.size()) {
+        bitString.resize(bitString.size() - paddedBits);
+    }
+
+    map<string, unsigned char> reverseCodes;
+    for (int i = 0; i < 256; ++i) {
+        if (!codes[i].empty()) {
+            reverseCodes[codes[i]] = (unsigned char)i;
+        }
+    }
+
+    vector<unsigned char> output;
+    if (originalSize > 0) {
+        output.reserve((size_t)originalSize);
+    }
+
+    string current;
+    for (size_t i = 0; i < bitString.size(); ++i) {
+        current.push_back(bitString[i]);
+        map<string, unsigned char>::iterator it = reverseCodes.find(current);
+        if (it != reverseCodes.end()) {
+            output.push_back(it->second);
+            current.clear();
+            if (originalSize > 0 && output.size() >= (size_t)originalSize) {
+                break;
+            }
+        }
+    }
+
+    if (originalSize > 0 && output.size() > (size_t)originalSize) {
+        output.resize((size_t)originalSize);
+    }
+
+    string dir = getDirectory(cpmPath);
+    string baseO = getBaseName(originalName);
+    string extO = getExtension(originalName);
+    string outputName = dir + baseO + "-descomprimido" + extO;
+
+    if (!writeFile(outputName, output)) {
+        return false;
+    }
+
+    cout << "Archivo descomprimido correctamente.\n";
+    cout << "Archivo .cpm             : " << cpmPath << "\n";
+    cout << "Nombre original (header) : " << originalName << "\n";
+    cout << "Archivo descomprimido    : " << outputName << "\n";
+    return true;
+}
+
 int main() {
     cout << "============================================\n";
     cout << "  COMPRESOR / DESCOMPRESOR HUFFMAN (.cpm)\n";
     cout << "============================================\n\n";
-
 
     int opcion;
     string entrada;
@@ -401,7 +446,6 @@ int main() {
         cout << "Seleccione una opcion: ";
 
         if (!(cin >> opcion)) {
-            // Manejo sencillo de error: si el usuario escribe letras u otra cosa
             cin.clear();
             cin.ignore(10000, '\n');
             cout << "Entrada invalida. Intente de nuevo.\n";
@@ -412,7 +456,7 @@ int main() {
         case 1:
             cout << "\n--- COMPRESION ---\n";
             cout << "Ingrese ruta del archivo a comprimir (ArchivoX.ext): ";
-            cin >> entrada;      // sencillo: sin espacios
+            cin >> entrada;
             if (!compressFile(entrada)) {
                 cout << "Ocurrio un error al comprimir.\n";
             }
