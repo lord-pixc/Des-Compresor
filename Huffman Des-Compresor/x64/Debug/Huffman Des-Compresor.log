@@ -1,0 +1,5 @@
+﻿  Descomprimir.cpp
+C:\Users\Corea\source\repos\Huffman Des-Compresor\Huffman Des-Compresor\Descomprimir.cpp(1,10): error C1014: hay demasiados archivos de inclusión: nivel = 1024
+  Huffman Des-Compresor.cpp
+C:\Users\Corea\source\repos\Huffman Des-Compresor\Huffman Des-Compresor\Huffman Des-Compresor.cpp(1,10): error C1014: hay demasiados archivos de inclusión: nivel = 1024
+  Generando código...
